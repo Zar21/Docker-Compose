@@ -1,0 +1,113 @@
+---
+version: '3'
+services:
+  elasticsearch:
+    image: 'docker.elastic.co/elasticsearch/elasticsearch-oss:6.8.2'
+    environment:
+      - http.host=0.0.0.0
+      - network.host=0.0.0.0
+      - transport.host=0.0.0.0
+      - "ES_JAVA_OPTS=-Xmx256m -Xms256m"
+      - discovery.type=single-node
+    ports:
+      - '9200:9200'
+      - '9300:9300'
+    volumes:
+      - 'elasticVol:/usr/share/elasticsearch/data'
+    networks:
+      - practica_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+  mongo:
+    image: 'mongo:3'
+    volumes:
+      - 'mongoVol:/data/db'
+    ports:
+      - '27017:27017'
+    networks:
+      - practica_network
+    healthcheck:
+      test: 
+        - CMD
+        - mongo
+        - --eval
+        - "db.adminComand('ping')"
+      interval: 10s
+      timeout: 10s
+      retries: 5
+  graylog:
+    image: 'graylog/graylog:3.1'
+    environment:
+      - GRAYLOG_PASSWORD_SECRET=somepasswordpepper
+      - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://127.0.0.1:9000/
+    volumes:
+      - 'graylogVol:/usr/share/elasticsearch/data'
+    restart: on-failure
+    networks:
+      - practica_network
+    depends_on:
+      - mongo
+      - elasticsearch
+    ports:
+      - '9000:9000'
+      - '12201:12201/udp'
+      - '12201:12201'
+      - '1514:1514'
+      - '1514:1514/udp'
+  mysql:
+    image: 'mysql:5.7'
+    volumes:
+      - 'mysqlVol:/var/lib/mysql'
+    environment:
+      - MYSQL_ROOT_PASSWORD=test2000
+      - MYSQL_DATABASE=wordpress
+      - MYSQL_USER=wordpress
+      - MYSQL_PASSWORD=wordpress
+    networks:
+      - practica_network
+    ports:
+      - 3306:3306
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin -h 'localhost' -u root -ptest2000 ping --silent
+      interval: 30s
+      timeout: 30s
+      retries: 3
+  wordpress:
+    image: 'wordpress:latest'
+    environment:
+      WORDPRESS_DB_HOST: 'mysql:3306'
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - 'wordpressVol:/var/www/html'
+    restart: on-failure
+    networks:
+      - practica_network
+    depends_on:
+      - mysql
+    ports:
+      - '9090:80'
+    logging:
+      driver: gelf
+      options:
+        gelf-address: 'udp://localhost:12201'
+        tag: primeros-logs
+networks:
+  practica_network: null
+volumes:
+  elasticVol: null
+  mongoVol: null
+  graylogVol: null
+  mysqlVol: null
+  wordpressVol: null
